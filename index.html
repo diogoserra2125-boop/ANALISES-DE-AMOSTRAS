@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Análises de Amostras</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root {
     --bg:        #0b0f1a;
@@ -58,12 +59,12 @@
   }
   .logo-text h1 { font-size: 18px; font-weight: 700; letter-spacing: -.3px; }
   .logo-text p  { font-size: 12px; color: var(--muted); margin-top: 2px; }
-  .header-right { display: flex; align-items: center; gap: 12px; }
+  .header-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .header-badge { background: rgba(59,130,246,.15); border: 1px solid rgba(59,130,246,.3); color: var(--accent); padding: 5px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; }
 
   .theme-toggle {
     display: flex; align-items: center; background: var(--card); border: 1px solid var(--border);
-    border-radius: 20px; padding: 3px; cursor: pointer; gap: 2px; user-select: none;
+    border-radius: 20px; padding: 3px; gap: 2px; user-select: none;
   }
   .theme-toggle button {
     border: none; background: transparent; color: var(--muted); padding: 6px 12px;
@@ -72,12 +73,48 @@
   }
   .theme-toggle button.active { background: var(--accent); color: #fff; }
 
+  .source-bar {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 12px 32px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  }
+  .source-bar input[type=url] {
+    flex: 1; min-width: 240px; background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    padding: 8px 12px; border-radius: 8px; font-size: 12.5px; font-family: var(--font-mono);
+  }
+  .btn-primary {
+    background: var(--accent); color: #fff; border: none; padding: 8px 16px;
+    border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity .2s;
+    display: flex; align-items: center; gap: 6px; white-space: nowrap;
+  }
+  .btn-primary:hover { opacity: .88; }
+  .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-secondary {
+    background: var(--card); color: var(--text); border: 1px solid var(--border); padding: 8px 14px;
+    border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: border-color .2s;
+    display: flex; align-items: center; gap: 6px; white-space: nowrap;
+  }
+  .btn-secondary:hover { border-color: var(--accent); }
+  .source-status { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .source-status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .source-status.ok .dot { background: var(--success); }
+  .source-status.err .dot { background: var(--danger); }
+  .source-status.loading .dot { background: var(--accent2); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  .source-help {
+    width: 100%; font-size: 12px; color: var(--muted); line-height: 1.6; display: none;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-top: 4px;
+  }
+  .source-help.show { display: block; }
+  .source-help b { color: var(--text); }
+  .source-help code { background: var(--card); padding: 1px 5px; border-radius: 4px; font-family: var(--font-mono); }
+
   .filter-bar {
     background: var(--surface); border-bottom: 1px solid var(--border);
     padding: 14px 32px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
   }
   .filter-bar label { font-size: 12px; color: var(--label); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
-  .filter-bar select, .filter-bar input {
+  .filter-bar select, .filter-bar input[type=text] {
     background: var(--bg); border: 1px solid var(--border); color: var(--text);
     padding: 7px 12px; border-radius: 8px; font-size: 13px; cursor: pointer;
     transition: border-color .2s;
@@ -130,10 +167,8 @@
   .panel-title  { font-size: 13px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
   .panel-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
   .panel-sub { font-size: 11px; color: var(--muted); }
-  .panel-hint { font-size: 10px; color: var(--accent); font-style: italic; }
   .chart-wrap { position: relative; height: 240px; }
   .chart-wrap-tall { position: relative; height: 300px; }
-  .clickable-chart canvas { cursor: pointer; }
 
   .table-panel { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; box-shadow: 0 1px 3px var(--shadow); }
   table { width: 100%; border-collapse: collapse; }
@@ -172,11 +207,15 @@
   .faixa-fill { height: 100%; border-radius: 4px; transition: width .6s ease; }
 
   .empty { text-align: center; color: var(--muted); padding: 48px; font-size: 14px; }
+  .empty-state { text-align: center; color: var(--muted); padding: 80px 20px; }
+  .empty-state .big { font-size: 40px; margin-bottom: 16px; }
+  .empty-state .title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+  .empty-state .desc { font-size: 13px; max-width: 480px; margin: 0 auto; line-height: 1.6; }
 
   footer { text-align: center; padding: 20px; color: var(--muted); font-size: 11px; border-top: 1px solid var(--border); margin-top: 8px; }
 
   @media (max-width: 768px) {
-    main, .filter-bar, header { padding: 16px; }
+    main, .filter-bar, header, .source-bar { padding: 16px; }
     .row-2, .row-3 { grid-template-columns: 1fr; }
   }
 </style>
@@ -188,17 +227,36 @@
     <div class="logo-icon">🔬</div>
     <div class="logo-text">
       <h1>Análises de Amostras</h1>
-      <p>Compras Hospitalares · Licitações &amp; Avaliação Técnica · Nov/25 – Jun/26</p>
+      <p>Compras Hospitalares · Licitações &amp; Avaliação Técnica</p>
     </div>
   </div>
   <div class="header-right">
-    <div class="header-badge">8 meses · 362 amostras</div>
+    <div class="header-badge" id="headerBadge">Carregando…</div>
     <div class="theme-toggle" id="themeToggle">
       <button id="btnDark" class="active">🌙 Dark</button>
       <button id="btnLight">☀️ Light</button>
     </div>
   </div>
 </header>
+
+<div class="source-bar">
+  <label style="white-space:nowrap">Link do Google Sheets</label>
+  <input type="url" id="sourceUrl" placeholder="Cole aqui o link do Google Sheets (qualquer link da planilha)…"/>
+  <button class="btn-primary" id="btnLoadUrl">🔄 Atualizar dados</button>
+  <button class="btn-secondary" id="btnUploadFile">📁 Carregar arquivo (.xlsx)</button>
+  <input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none"/>
+  <span class="source-status" id="sourceStatus"><span class="dot"></span><span id="sourceStatusText">Nenhuma fonte carregada</span></span>
+  <span class="btn-secondary" id="btnHelp" style="cursor:pointer">❔ Como conectar</span>
+  <div class="source-help" id="sourceHelp">
+    <b>Como conectar com sua planilha do Google Sheets:</b><br/>
+    1. Na planilha, clique em <b>Compartilhar</b> (canto superior direito) → em "Acesso geral" selecione <b>"Qualquer pessoa com o link"</b> com permissão <b>"Leitor"</b>.<br/>
+    2. Copie o link normal da planilha (o que aparece na barra de endereço) e cole no campo acima.<br/>
+    3. Clique em <b>🔄 Atualizar dados</b>.<br/><br/>
+    <b>Não precisa reorganizar nada:</b> o dashboard procura sozinho as abas mensais (NOVEMBRO, DEZEMBRO, JANEIRO - 2026, FEVEREIRO - 2026 etc.) dentro da sua planilha e ignora abas auxiliares como RESUMO, LL e LISTA DE MATERIAIS.<br/><br/>
+    Sempre que você editar e salvar algo na planilha do Google Sheets, é só clicar em <b>🔄 Atualizar dados</b> de novo (ou reabrir o dashboard, que tenta recarregar sozinho).<br/><br/>
+    Se preferir não usar Google Sheets, o botão <b>📁 Carregar arquivo</b> sempre funciona com o .xlsx baixado, em 1 clique.
+  </div>
+</div>
 
 <div class="filter-bar">
   <span class="filter-group">
@@ -238,110 +296,479 @@
   </div>
 </div>
 
-<main>
-  <div class="kpi-grid" id="kpiGrid"></div>
-
-  <div class="chart-row row-3">
-    <div class="chart-panel">
-      <div class="panel-header">
-        <div class="panel-title"><div class="panel-dot"></div>Amostras Enviadas por Mês</div>
-        <span class="panel-sub">Volume mensal de envio</span>
-      </div>
-      <div class="chart-wrap"><canvas id="chartLinha"></canvas></div>
-    </div>
-    <div class="chart-panel">
-      <div class="panel-header">
-        <div class="panel-title"><div class="panel-dot" style="background:var(--accent2)"></div>Por Criticidade</div>
-        <span class="panel-hint">clique para filtrar</span>
-      </div>
-      <div class="faixa-list" id="faixaList" style="margin-top:8px"></div>
-    </div>
+<main id="mainContent">
+  <div class="empty-state" id="emptyState">
+    <div class="big">📊</div>
+    <div class="title">Nenhuma planilha carregada ainda</div>
+    <div class="desc">Cole o link da planilha do SharePoint/OneDrive acima e clique em <b>Atualizar dados</b>, ou use <b>Carregar arquivo</b> para abrir um .xlsx do seu computador.</div>
   </div>
 
-  <div class="chart-row row-2">
-    <div class="chart-panel">
-      <div class="panel-header">
-        <div class="panel-title"><div class="panel-dot" style="background:#f59e0b"></div>Top 10 Grupos de Material</div>
-        <span class="panel-sub" id="barSubtitle"></span>
-      </div>
-      <div class="chart-wrap-tall"><canvas id="chartBar"></canvas></div>
-    </div>
-    <div class="chart-panel clickable-chart">
-      <div class="panel-header">
-        <div class="panel-title"><div class="panel-dot" style="background:#10b981"></div>Status das Análises</div>
-        <span class="panel-hint">clique para filtrar</span>
-      </div>
-      <div class="chart-wrap-tall"><canvas id="chartDonut"></canvas></div>
-    </div>
-  </div>
+  <div id="dashboardContent" style="display:none">
+    <div class="kpi-grid" id="kpiGrid" style="margin-bottom:24px"></div>
 
-  <div class="chart-row">
-    <div class="chart-panel">
-      <div class="panel-header">
-        <div class="panel-title"><div class="panel-dot" style="background:#a78bfa"></div>Tempo Médio de Análise por Mês (dias)</div>
-        <span class="panel-sub">Tendência de agilidade do processo</span>
+    <div class="chart-row row-3" style="margin-bottom:24px">
+      <div class="chart-panel">
+        <div class="panel-header">
+          <div class="panel-title"><div class="panel-dot"></div>Amostras Enviadas por Mês</div>
+        </div>
+        <div class="chart-wrap"><canvas id="chartLinha"></canvas></div>
       </div>
-      <div class="chart-wrap"><canvas id="chartMedia"></canvas></div>
+      <div class="chart-panel">
+        <div class="panel-header">
+          <div class="panel-title"><div class="panel-dot" style="background:var(--accent2)"></div>Por Criticidade</div>
+        </div>
+        <div class="faixa-list" id="faixaList" style="margin-top:8px"></div>
+      </div>
     </div>
-  </div>
 
-  <div class="table-panel">
-    <div class="panel-header" style="margin-bottom:16px">
-      <div class="panel-title"><div class="panel-dot" style="background:#ef4444"></div>Amostras Detalhadas</div>
-      <span class="panel-sub" id="tableCount"></span>
+    <div class="chart-row row-2" style="margin-bottom:24px">
+      <div class="chart-panel">
+        <div class="panel-header">
+          <div class="panel-title"><div class="panel-dot" style="background:#f59e0b"></div>Top 10 Grupos de Material</div>
+          <span class="panel-sub" id="barSubtitle"></span>
+        </div>
+        <div class="chart-wrap-tall"><canvas id="chartBar"></canvas></div>
+      </div>
+      <div class="chart-panel">
+        <div class="panel-header">
+          <div class="panel-title"><div class="panel-dot" style="background:#10b981"></div>Status das Análises</div>
+        </div>
+        <div class="chart-wrap-tall"><canvas id="chartDonut"></canvas></div>
+      </div>
     </div>
-    <div style="overflow-x:auto">
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Descrição do Item</th>
-            <th>Grupo</th>
-            <th>Empresa / Marca</th>
-            <th>Mês</th>
-            <th>Tempo (dias)</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody id="tableBody"></tbody>
-      </table>
+
+    <div class="chart-row" style="margin-bottom:24px">
+      <div class="chart-panel">
+        <div class="panel-header">
+          <div class="panel-title"><div class="panel-dot" style="background:#a78bfa"></div>Tempo Médio de Análise por Mês (dias)</div>
+        </div>
+        <div class="chart-wrap"><canvas id="chartMedia"></canvas></div>
+      </div>
+    </div>
+
+    <div class="table-panel">
+      <div class="panel-header" style="margin-bottom:16px">
+        <div class="panel-title"><div class="panel-dot" style="background:#ef4444"></div>Amostras Detalhadas</div>
+        <span class="panel-sub" id="tableCount"></span>
+      </div>
+      <div style="overflow-x:auto">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Descrição do Item</th>
+              <th>Grupo</th>
+              <th>Empresa / Marca</th>
+              <th>Mês</th>
+              <th>Tempo (dias)</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 </main>
 
-<footer>Análises de Amostras · Dados: LISTA DE ITENS - AMOSTRA.xlsx · 362 amostras analisadas · Nov/2025 – Jun/2026</footer>
+<footer id="footerText">Análises de Amostras</footer>
 
 <script>
-const RAW_RECORDS = [{"mes": "Novembro/25", "grupo": "HEMODINÂMICA", "criticidade": "ALTA", "descricao": "INTRODUTOR DE CATETER FEMURAL ADULTO 5 F 11 CM PONTA J", "area": "HEMODINAMICA - VITOR", "empresa": "Sellmed/Shunmei", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Novembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "AVENTAL DESCARTAVEL NAO ESTERIL IMPERMEAVEL MANGA LONGA", "area": "SCIH", "empresa": "Infiniti/Propria", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Novembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "CAPA PARA COLCHAO ANTI-ESCARA, EM PVC MEDINDO 240 CM X 140 CM", "area": "CURATIVO - ISABEL", "empresa": "Apice/Ap-Protect", "tempo": 6.0, "status": "DEVOLVIDO"}, {"mes": "Novembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "CATETER DUPLO LUMEN DE LONGA PERMANENCIA 14 FR 32 CM", "area": "CENTRO CIRURGICO - DR. HERNANI", "empresa": "Unidas/KFF S.A", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Novembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "COBERTURA TRANSP 3,8 X 4,5CM FENESTRA NEONATAL/PERIFERICO", "area": "SCIH", "empresa": "Medilar/3M Tegaderm", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Novembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "EQUIPO TRANSFUSAO DE SANGUE BURETA C FILTRO INFANTIL", "area": "CENTRO CIRÚRGICO", "empresa": "Nova D./Labor", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Novembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "FILTRO BARREIRA PARA CIRCUITO RESPIRADOR BB 100", "area": "FISIOTERAPIA - MARIANA", "empresa": "LICITATRADE / Scav / MLA SUPRIMENTOS", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Novembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "GEL PARA ELETROCARDIOGRAMA E DESFIBRILADOR CARDIACO FR 250G", "area": "AMBULATÓRIO - MARCIA", "empresa": "ZMED  / multigel", "tempo": 9.0, "status": "DEVOLVIDO"}, {"mes": "Novembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "LUVA CIRURGICA ESTERIL N 7,5 PAR", "area": "SCIH", "empresa": "GET MED /LIFE PLUS", "tempo": 7.0, "status": "DEVOLVIDO"}, {"mes": "Novembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "PLACA DESCARTAVEL C/ REM SEM CABO ADULTO", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "ALTERNATIVA /  BluePad", "tempo": 7.0, "status": "DEVOLVIDO"}, {"mes": "Novembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "SONDA ENDOTRAQUEAL COM BALAO N 6,5", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "Cirugica F./Well Lead", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Novembro/25", "grupo": "NUTRIÇÃO", "criticidade": "ALTA", "descricao": "AGUA MINERAL SEM GAS 1,5 L", "area": "NUTRIÇÃO - MARIA JOSÉ", "empresa": "Terra N. A./Ecoleve", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Novembro/25", "grupo": "NUTRIÇÃO", "criticidade": "MÉDIA", "descricao": "MODULO DIETA ENTERAL/ORAL ESPESSANTE (MAXI SPERSE)", "area": "NUTRIÇÃO - MARIA JOSÉ", "empresa": "Biosn/Sérgio", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Novembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "PADRONIZAÇÃO", "descricao": "BISTURI 15º GRAUS OFTALMICO ( UNIQUE EDGE) CARGA MEDICAL", "area": "CENTRO CIRURGICO", "empresa": "DANIALEX", "tempo": 27.0, "status": "DEVOLVIDO"}, {"mes": "Novembro/25", "grupo": "FIOS DE SUTURA", "criticidade": "PADRONIZAÇÃO", "descricao": "SURGICAL FIBRILLAR 2,5 CM X 5CM - ETHICON REF 411961", "area": "CENTRO CIRURGICO", "empresa": "DANIALEX", "tempo": 27.0, "status": "DEVOLVIDO"}, {"mes": "Novembro/25", "grupo": "FIOS DE SUTURA", "criticidade": "PADRONIZAÇÃO", "descricao": "FIO DE ACO N.0 AG 26MM", "area": "CENTRO CIRURGICO", "empresa": "MICROSUTURE", "tempo": 27.0, "status": "DEVOLVIDO"}, {"mes": "Novembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "PADRONIZAÇÃO", "descricao": "CATETER ARTERIAL 22G X 5CM", "area": "CENTRO CIRURGICO", "empresa": "ALIVE HEART", "tempo": 27.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "FIOS DE SUTURA", "criticidade": "ALTA", "descricao": "PROLENE 3-0 - 75 CM 2 AG.1/2 2,0 CM", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "SHALON", "tempo": 4.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "FIOS DE SUTURA", "criticidade": "ALTA", "descricao": "PROLENE 4-0 - 75CM 2 AG.1/2 1,5 CM", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "BIOLINE", "tempo": 6.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "FIOS DE SUTURA", "criticidade": "ALTA", "descricao": "PROLENE 6-0 - 75 CM 2 AG.3/8 13 MM", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "SHALON", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "FIOS DE SUTURA", "criticidade": "ALTA", "descricao": "PROLENE 7-0 - 75 CM 2 AG. 3/8 1,0 CM", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "BIOLINE", "tempo": 6.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "HEMODINÂMICA", "criticidade": "MÉDIA", "descricao": "CATETER DIAGNOSTICO MAMARIA 6F X 100 CM", "area": "HEMODINAMICA - VITOR", "empresa": "TOTAL LIFE", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "HEMODINÂMICA", "criticidade": "MÉDIA", "descricao": "INTRODUTOR DE CATETER FEMURAL ADULTO 8 F 11 CM PONTA J", "area": "HEMODINAMICA - VITOR", "empresa": "YLSON MEDICAL", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "HEMODINÂMICA", "criticidade": "ALTA", "descricao": "TORNEIRA DE 4 OU 5 VIAS (MANIFOLD) E 2 OU 3 VALVULAS", "area": "HEMODINAMICA - VITOR", "empresa": "MESSER/LEPU", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "ACIDOS GRAXOS ESSENCIAIS LOCAO HIDRATANTE FRASCO 200 ML", "area": "ISABEL CURATIVO", "empresa": "NEO/Nutriex", "tempo": 34.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "AGULHA PARA COLETA MULTIPLA 25 X 7", "area": "SCIH", "empresa": "Solcare/ Sol-M.", "tempo": 20.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "COBERTURA POLIURETANO 5,0cm X 5,7cm FENESTRADO", "area": "CURATIVO - ISABEL", "empresa": "Medicina/Copertina", "tempo": 5.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "COLETOR DE URINA SISTEMA FECHADO ADULTO", "area": "SCIH", "empresa": "Soma/Medix", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "COMPRESSA DE GAZE NAO ESTERIL 13 FIOS 7,5 X 7,5 CM PCT C/ 500 UNIDADES", "area": "SCIH", "empresa": "COTTONMAX", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "DISPOSITIVO PARA VEDACAO DE CATETER (CLAVE)", "area": "SCIH", "empresa": "K-ZERO - FRESENIUS", "tempo": 14.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "ELETRODO DE MONITORIZACAO DESCARTAVEL ADULTO", "area": "AMBULATORIO - MARCIA", "empresa": "Zmed/Medix", "tempo": 20.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "EQUIPO BURETA INJETOR LATERAL SEM FILTRO", "area": "SCIH", "empresa": "Soma/Descarpack", "tempo": 6.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "EQUIPO PARA DIETA ENTERAL SEM FILTRO", "area": "HEMODIÁLISE - CONCEIÇÃO", "empresa": "Bellamed/Descarpack", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "FIXADOR SONDA NASOENTERAL ADULTO", "area": "EMTN- EVELISE", "empresa": "MAGNA", "tempo": 7.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "PADRONIZAÇÃO", "descricao": "FIXADOR TRAQUEOSTOMIA INFANTIL", "area": "FISIOTERAPIA - MARIANA / EVELISE", "empresa": "FRADEL", "tempo": 6.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "INVOLUCRO  ESTERILIZACAO 90 X 90 CM", "area": "CME - ELAINE", "empresa": "POLARFIX", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "KIT CPAP BOLSA DE AR  TAM  ADULTO G ( cod Siaf. Único)", "area": "FISIOTERAPIA - MARIANA", "empresa": "MEDICAL/MAKE L.", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "LANCETAS", "area": "5 ANDAR- SERGIO", "empresa": "Elos P./Biomass", "tempo": 35.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "LUVA CIRURGCIA DESCARTAVEL ISENTO DE LATEX SEM TALCO Nº 7,0", "area": "SCIH", "empresa": "De Pauli/Descarpack", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "LUVA CIRURGICA ESTERIL N 7,0 PAR", "area": "SCIH", "empresa": "LIFE PLUS", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "LUVA P/ PROCEDIMENTO NITRILA AZUL (M)", "area": "SCIH", "empresa": "Supermed/Zelara", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "MALHA TUBULAR ORTOP.,100% ALGODAO CRU,10CM X 25M", "area": "AMBULATÓRIO - MARCIA", "empresa": "Ortobens/Ortofen", "tempo": 18.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "SAPATILHA CIRURGICA MALHA (PAR)", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "ANADONA", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "SONDA ENDOTRAQUEAL COM BALAO N 3,5", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "Pontual/Vitalgold", "tempo": 8.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "SONDA GASTRICA LONGA N 16", "area": "UTI PEDIÁTRICA - EVELISE", "empresa": "MARKMED", "tempo": 6.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "TIRA REAGENTE DE GLICOSE", "area": "5 ANDAR- SERGIO", "empresa": "Pontual/G-Tech", "tempo": 11.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "TOALHA DE PAPEL SIMPLES INTERFOLHADA", "area": "CARLOS GRANDÃO - SAA", "empresa": "UNAPEL", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENGENHARIA CLÍNICA", "criticidade": "BAIXA", "descricao": "CANULA DE GUEDEL N 03", "area": "MARA - UTI", "empresa": "Pontual/JoaoMed", "tempo": 19.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "SCIH", "criticidade": "NÃO INFORMADA", "descricao": "EXTENSOR P/ EQUIPO C/ LUER LOCK 120 CM (INFANTIL)", "area": "SCIH", "empresa": "Biosani", "tempo": 13.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "GTO", "criticidade": "BAIXA", "descricao": "TORNEIRAS DE LATÃO PARA OS DEPÓSITOS DE LIMPEZA", "area": "GTO - MARCIO", "empresa": "Brave/Pevilon", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "GTO", "criticidade": "BAIXA", "descricao": "TORNEIRA AUTOMATICA COM FECHAMENTO MECANICO", "area": "GTO - MARCIO", "empresa": "FURKIM", "tempo": 7.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "MASCARA LARINGEA DESCARTAVEL EM PVC Nº 1,5", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "MEDTECH", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENGENHARIA CLÍNICA", "criticidade": "PADRONIZAÇÃO", "descricao": "CABO PACIENTE PARA GRAVADOR DE HOLTER MODELO CARDIOLIGHT 4 VIAS", "area": "ENGENHARIA CLINICA - BRENDA", "empresa": "CARDIOS", "tempo": 13.0, "status": "DEVOLVIDO"}, {"mes": "Dezembro/25", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "PADRONIZAÇÃO", "descricao": "FITA ADESIVA SILICONADA", "area": "UTI PEDIÁTRICA - EVELISE", "empresa": "VITALDERME", "tempo": 6.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "ESCRITÓRIO", "criticidade": "BAIXA", "descricao": "PASTA TIPO CATALOGO COM 100 ENVELOPES", "area": "ADM/LICITAÇÃO", "empresa": "Dalive/Polibras", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "INSUMOS LOGÍSTICA", "criticidade": "ALTA", "descricao": "BOBINA TRANSPARENTE PICOTADA 25 X 35 CM ROLO", "area": "LOGISTICA", "empresa": "Pablo/AJM", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "INSUMOS LOGÍSTICA", "criticidade": "ALTA", "descricao": "COPO DESCARTAVEL PARA AGUA", "area": "SAA - CARLOS", "empresa": "COPO BRAS / EJ", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "INSUMOS LOGÍSTICA", "criticidade": "MÉDIA", "descricao": "ETIQUETA AUTO ADESIVA 2 CARREIRA MEDINDO 50 X 30 MM BRANCA (BOPP)", "area": "CME - ELAINE", "empresa": "BMA/Braggio", "tempo": 7.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "INSUMOS LOGÍSTICA", "criticidade": "ALTA", "descricao": "ETIQUETA ROTULO SORO 98X88MM", "area": "LICITAÇÕES/LOGISITICA", "empresa": "NÃO INFORMADA", "tempo": 0.0, "status": "ANÁLISE EM ATRASO"}, {"mes": "Janeiro/26", "grupo": "INSUMOS LOGÍSTICA", "criticidade": "ALTA", "descricao": "SACO PLASTICO PICOTADO 5 X 10 CM SEM SERRILHA TRANSLUCIDA ROLO", "area": "LOGISTICA", "empresa": "Milena/Klemil", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "ACIDO PERACETICO GALAO 5L", "area": "CME - ELAINE", "empresa": "Osaslab/Spartan", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "AGULHA PARA COLETA MULTIPLA 25 X 8", "area": "SCIH", "empresa": "Expert/Injex", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "ANTISSEPTICO BUCAL COMPOSTO GEL UMECTANTE (SALIVA ARTIFICAL)", "area": "VALÉRIA- AMBULATÓRIO/ ODONTO", "empresa": "ODOMED PRO", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "AVENTAL DESC. NAO ESTERIL MANGA LONGA BRANCO 30G/M²", "area": "SCIH", "empresa": "EURODESCK", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "CAMPO CIRURGICO IMPERMEAVEL  APROX. 115 X 115", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "UNICARE HEALTH", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "CATETER INTRAVENOSO RADIOPACO ESTERIL 24G - NEONATAL", "area": "UTI PEDIATRICA - EVELISE", "empresa": "Dimebras/Autogard", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "COBERTURA TRANSP 3,8 X 4,5CM FENESTRA NEONATAL/PERIFERICO", "area": "SCIH", "empresa": "Pontual/Wound", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "DOSADOR ORAL TIPO SERINGA 20 ML", "area": "Evelise - UIT PED", "empresa": "ADVANTIVE", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "DRENO DE TORAX Nº 36", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "Gold/Foyomed", "tempo": 4.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "ELETRODO DE MONITORIZACAO DESCARTAVEL ADULTO", "area": "AMBULATORIO - MARCIA", "empresa": "Elos/Live", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "EQUIPO MACROGOTAS SEM INJETOR LATERAL SEM FILTRO", "area": "SCIH", "empresa": "MEDIX", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "EQUIPO TRANSFUSAO DE SANGUE BURETA C FILTRO INFANTIL", "area": "CENTRO CIRÚRGICO", "empresa": "VITAL", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "FITA MICROPERFURADA TRANSPARENTE 100 MM X 4,5 M", "area": "CURATIVO - ISABEL", "empresa": "De Pauli/Vital Fix", "tempo": 5.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "GUIA PARA ENTUBACAO 15FR X 700MM", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "FORMED", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "INVOLUCRO DESC.P/ESTERILIZACAO EM FOLHA POLIPROP.E CELULOSE 51X63CM 45", "area": "CME - ELAINE", "empresa": "Sterilex", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "LUVA PARA PROCEDIMENTO ESTERIL MEDIA", "area": "SCIH", "empresa": "MEDIX", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "MASCARA LARINGEA DESCARTAVEL EM PVC Nº 5", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "MEDTECH", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "PULSEIRA CLASSIFICAÇÃO DE RISCO (COR LARANJA)", "area": "SEC - SELMA", "empresa": "MICRORAR", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "SAPATILHA CIRURGICA MALHA (PAR)", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "Newcare/Msó", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "SONDA ENDOTRAQUEAL COM BALAO N 4,5", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "COMPER", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENGENHARIA CLÍNICA", "criticidade": "BAIXA", "descricao": "MASCARA FACIAL, NÃO ESTERIL,EM PVC ADAPTAVEL,DE NÃO REINALAÇÃO PEDIATRICO", "area": "FISIOTERAPIA - MARIANA", "empresa": "Express/NetBreathe", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "NUTRIÇÃO", "criticidade": "BAIXA", "descricao": "SUPL.NUTR. P/ USO 0RAL/ENTERAL ISENTO DE LACTOSE E GLUTEN", "area": "NUTRIÇÃO - MARIA JOSÉ", "empresa": "Anvax/Danone", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "GTO", "criticidade": "BAIXA", "descricao": "TORNEIRA AUTOMATICA COM FECHAMENTO MECANICO", "area": "GTO - MARCIO", "empresa": "PEVILON", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENGENHARIA CLÍNICA", "criticidade": "PADRONIZAÇÃO", "descricao": "BLOCO DE PAPEL PARA ELETROCARDIÓGRAFO", "area": "ENGENHARIA CLINICA - BRENDA", "empresa": "Pontual/Suprimentos M.", "tempo": 5.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "PADRONIZAÇÃO", "descricao": "PROTETOR DE TIREOIDE", "area": "HEMODINAMICA - VITOR", "empresa": "PLANIDEIA", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "COMODATO - SOLUÇÃO ALCOOLICA PARA ANTISSEPSIA CIRURGICA DAS MAOS", "area": "SCIH", "empresa": "OPTICARE SS / RECOMED", "tempo": 8.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "RETRATOR DE INCISÃO P", "area": "CENTRO CIRURGICO - DRA JANAYNA", "empresa": "VICARE / STAN", "tempo": 7.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "RETRATOR DE INCISÃO M", "area": "CENTRO CIRURGICO - DRA JANAYNA", "empresa": "VICARE / STAN", "tempo": 7.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "PADRONIZAÇÃO", "descricao": "AVENTAL DE CHUMBO", "area": "HEMODINAMICA - VITOR", "empresa": "CSR", "tempo": 16.0, "status": "DEVOLVIDO"}, {"mes": "Janeiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "CATETER VENOSO CENTRAL PEDIATRICO 4 FR X 8 CM DUPLO LUMEN", "area": "HEMODINAMICA - VITOR", "empresa": "ALIVE", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "FIOS DE SUTURA", "criticidade": "ALTA", "descricao": "PROLENE 3-0 - 75 CM 2 AG.1/2 2,0 CM", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "DOC/Meril", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "HEMODINÂMICA", "criticidade": "MÉDIA", "descricao": "CATETER DIAGNOSTICO AMPLATZ 5 F AL 1 X 100 CM", "area": "HEMODINAMICA - VITOR", "empresa": "Total Life/Shanghai", "tempo": 5.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "HEMODINÂMICA", "criticidade": "MÉDIA", "descricao": "CATETER DIAGNOSTICO MULTI PURPOLSE 6F  X 100 CM", "area": "HEMODINAMICA - VITOR", "empresa": "Total Life/Shanghai", "tempo": 5.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "HEMODINÂMICA", "criticidade": "ALTA", "descricao": "INTRODUTOR DE CATETER FEMURAL ADULTO 7 F 11 CM PONTA J", "area": "HEMODINAMICA - VITOR", "empresa": "Sellmed/Angiotech", "tempo": 5.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "INSUMOS LOGÍSTICA", "criticidade": "ALTA", "descricao": "ETIQUETA AUTO ADESIVA 1 CARREIRA 100MM X 3,5MM ROLO (COUCHÊ)", "area": "CME - ELAINE", "empresa": "FEDRIGONI", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "ACIDOS GRAXOS ESSENCIAIS LOCAO HIDRATANTE FRASCO 200 ML", "area": "ISABEL CURATIVO", "empresa": "Magazine/Nutriex", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "ADAPTADOR PARA INFUSAO DE EQUIPO 2 VIAS", "area": "SCIH", "empresa": "EXPERT/SOLIDOR", "tempo": 8.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "AGULHA DESCARTAVEL 30 X 8 COM DISPOSITIVO DE SEGURANCA", "area": "SCIH", "empresa": "SG/Berpu", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "AGULHA PARA COLETA MULTIPLA 25 X 7", "area": "SCIH", "empresa": "Expert/Labor", "tempo": 5.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "APARELHO DE BARBEAR (UNIDADE)", "area": "CURATIVO - ISABEL", "empresa": "Bid/Gadan", "tempo": 5.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "ATADURA ELASTICA 10 CM X 4,5 M TENSOPLAST", "area": "FISIOTERAPIA MARIANA", "empresa": "EVO TAPE / LUPMED", "tempo": 6.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "BARREIRA PROTETORA P/ ESTOMIA 28G", "area": "CURATIVO - ISABEL", "empresa": "Dipromed/Convatec", "tempo": 7.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "CAMPO CIRURGICO INCISIONAL 44 X 55", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "PHARMAPLAST", "tempo": 6.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "CATETER DUPLO LUMEN PARA HEMODIALISE 11,5 FR 20 CM", "area": "CONCEIÇÃO HEMODIÁLISE", "empresa": "BIOMEDICAL", "tempo": 12.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "CATETER INTRAVENOSO PERIFERICO N 14 - TEFLON", "area": "SCIH", "empresa": "Larissa/Polymed", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "CATETER INTRAVENOSO PERIFERICO Y N 22", "area": "SCIH", "empresa": "PURAH/BRAMED", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "CATETER NASAL TIPO OCULOS NEONATAL", "area": "FISIOTERAPIA - MARIANA", "empresa": "MOGAMI/GABISA", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "COBERTURA DE HIDROCOLOIDE EXTRA FINO 10CMX10CM", "area": "CURATIVO - ISABEL", "empresa": "Polar Fix", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "COBERTURA POLIURETANO 5,0cm X 5,7cm FENESTRADO", "area": "CURATIVO - ISABEL", "empresa": "Polar fix", "tempo": 7.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "PADRONIZAÇÃO", "descricao": "COBERTURA NAO ADERENTE 10CM X 10CM", "area": "CURATIVO - ISABEL", "empresa": "Medic/Fibrosol", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "COMADRE DESCARTAVEL", "area": "5 ANDRA SERGIO", "empresa": "3P Medical", "tempo": 4.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "COMPRESSA DE GAZE ESTERIL 13 FIOS COM RADIOPACO 7,5 X 7,5 CM PCT C/ 10 UNIDADES", "area": "SCIH", "empresa": "MEDI HOUSE", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "COMPRESSA DE GAZE ESTERIL 13 FIOS COM RADIOPACO 7,5 X 7,5 CM PCT C/ 40 UNIDADES", "area": "SCIH", "empresa": "Get Med/Erimar", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "CURATIVO DE ALGINATO DE CALCIO 10 X 10 CM", "area": "CURATIVO - ISABEL", "empresa": "Polar Fix", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "CURATIVO HIDROCOLOIDE 10 X 10 CM", "area": "CURATIVO - ISABEL", "empresa": "Polar Fix", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "DETERGENTE DESINFECTANTE PARA LIMPEZA DE SUPERFICIE 5L", "area": "SCIH", "empresa": "BELL TYPE / VYROX", "tempo": 29.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "DISPOSITIVO PARA FIXACAO DE CATETER PICC", "area": "GABRIELA 5º ANDAR", "empresa": "Becton", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "DRENO DE PENROSE N 2", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "WALTEX", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "DRENO DE PENROSE N 3", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "WALTEX", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "DRENO DE SUCCAO DESCARTAVEL 3,17 MM (1/8 POL)", "area": "CURATIVO - ISABEL", "empresa": "VITAL SUC", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "ELETRODO DE MONITORIZACAO DESCARTAVEL PARA RESSONANCIA MAGNETICA", "area": "AMBULATORIO - MARCIA", "empresa": "Expert//Solidor", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "EQUIPO BOMBA INFUSAO TIPO ENTERAL (LANCETA)", "area": "UTI PEDIÁTRICA - EVELISE", "empresa": "TERUMO", "tempo": 6.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "EQUIPO BOMBA INFUSAO TIPO ENTERAL (PONTA CRUZ)", "area": "UTI PEDIÁTRICA  - EVELISE", "empresa": "TERUMO", "tempo": 6.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "EQUIPO MACROGOTAS SEM INJETOR LATERAL SEM FILTRO", "area": "SCIH", "empresa": "Glomed", "tempo": 8.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "EXTENSOR BOMBA SERINGA FOTO 120 CM", "area": "SCIH", "empresa": "TRO BR / MP", "tempo": 4.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "FITA MICROPERFURADA TRANSPARENTE 100 MM X 4,5 M", "area": "CURATIVO - ISABEL", "empresa": "CIEX", "tempo": 8.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "FIXADOR SONDA NASOENTERAL ADULTO", "area": "EMTN- EVELISE", "empresa": "SKINUPPER", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "FIXADOR PARA CATETER E SONDA VESICAL ADULTO", "area": "CURATIVO - ISABEL", "empresa": "MAGNA", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "FIXADOR PARA TUBO ENDOTRAQUEAL C/ VELCRO  ADULTO", "area": "FISIOTERAPIA - MARIANA", "empresa": "HAIBREATH", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "INVOLUCRO DESC.P/ESTERILIZACAO EM FOLHA POLIPROP.E CELULOSE 51X63CM 45", "area": "CME - ELAINE", "empresa": "Devant/Zermatt", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "LENCO UMEDECIDOS P/HIGIENE 14X17CM PCT 02UN", "area": "LABORATÓRIO - FERNANDA", "empresa": "Labenz/Higgo", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "PAPEL HIGIENICO FOLHA SIMPLES SEM PICOTE EM ROLO", "area": "CARLOS GRANDÃO SAA", "empresa": "VP/Abbaspel", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "PAPEL MILIMETRADO PARA ELETROCARDIOGRAMA 48 MM X 30 M ROLO", "area": "AMBULATÓRIO - MARCIA", "empresa": "Dimebras/Four Stars", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "PLACA DESCARTAVEL C/ REM COM CABO ADULTO", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "DBI MEDICAL", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "PROTETOR P/ BANHEIRA INFANTIL DESCARTAVEL", "area": "PEDIATRIA - CONCEIÇÃO", "empresa": "DCS/Higipratic.", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "REAGENTE BIOLOGICO-CARDIOLITE/DRAXIMAGE/MIBI", "area": "MEDICINA NUCLEAR - DR. CARLOS", "empresa": "Theia/Polar Técnica", "tempo": 7.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "SABONETE 20 G", "area": "4 ANDAR- ANA PAULA", "empresa": "SABOSHAM", "tempo": 4.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "SOLUCAO PARA LIMPEZA E REMOCAO DE BIOFILMES DE FERIDAS 350ML", "area": "CURATIVO - ISABEL", "empresa": "ANCOL/MISSNER", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "SONDA TRAQUEAL SISTEMA FECHADO Nº12 PEDIATRICO", "area": "UTI PEDIÁTRICA - EVELISE", "empresa": "MARKMED", "tempo": 8.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "SPRAY DE BARREIRA PROTETOR CUTÂNEO VUELO 28ML (CAVILON/VUELO)", "area": "CURATIVO - ISABEL", "empresa": "RMP/Dermablock", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "TOUCA DESCARTAVEL C/ ELASTICO", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "Anadona", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "TUBO COLETA DE SANGUE C/ EDTA 4ML (TAMPA ROXA)", "area": "LABORATÓRIO", "empresa": "SOL MILLENNIUM", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENGENHARIA CLÍNICA", "criticidade": "MÉDIA", "descricao": "VALVULA REGULADORA DE PRESSÃO PARA REDE CANALIZADA DE OXIGENIO", "area": "ENGENHARIA CLÍNICA - BRENDA", "empresa": "Haoxi", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "ODONTOLOGIA", "criticidade": "BAIXA", "descricao": "IONOMERO DE VIDRO PARA RESTAURACOES", "area": "ODONTO - DRA. VALÉRIA", "empresa": "OnMedical/Maxxion", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "ADAPTADOR INFUSAO EQUIPO 2 VIAS PEDIATRICO", "area": "UTI PEDRIÁTRICA - EVELISE", "empresa": "MP HOSPITALAR", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "ODONTOLOGIA", "criticidade": "PADRONIZAÇÃO", "descricao": "LIMA RETRATAMENTO", "area": "ODONTOLOGIA", "empresa": "SHENSHEN PERFECT", "tempo": 6.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "ODONTOLOGIA", "criticidade": "PADRONIZAÇÃO", "descricao": "LIMA PRO-T-25MM BLISTER SORTIDO", "area": "ODONTOLOGIA", "empresa": "SHENSHEN PERFECT", "tempo": 6.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "CATETER PERIFERICO LONGO 22GX64MM", "area": "SCIH", "empresa": "M2LIFE", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "ODONTOLOGIA", "criticidade": "PADRONIZAÇÃO", "descricao": "KITS PONTAS DE BORRACHA PRA ACABAMENTO DE POLIMENTO EM RESINA", "area": "ODONTOLOGIA", "empresa": "MICRODONT", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "ODONTOLOGIA", "criticidade": "PADRONIZAÇÃO", "descricao": "RESINA FLOW BULKFILL COR A3", "area": "ODONTOLOGIA", "empresa": "OPALLIS FLOW", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Fevereiro/26", "grupo": "MATERIAL DE ENGENHARIA CLÍNICA", "criticidade": "MÉDIA", "descricao": "VALVULA REGULADORA DE PRESSAO PARA USO EM CILINDRO DE CO2", "area": "GTO - GIVALDO", "empresa": "HAOXI", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "HEMODINÂMICA", "criticidade": "ALTA", "descricao": "LACO DE CAPTURA 20 MM X 125 CM CAT. 6F X 100 CM", "area": "HEMODINAMICA - VITOR", "empresa": "MSB MEDICAL", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "INSUMOS LOGÍSTICA", "criticidade": "ALTA", "descricao": "ETIQUETA AUTO ADESIVA 03 CARREIRAS 3,5MM  X 2,5MM ROLO  (ZEBRA ZM400)", "area": "CME - ELAINE", "empresa": "Braggio/BMA", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "PADRONIZAÇÃO", "descricao": "AERO PUFF CONTADOR ADULTO", "area": "MARIANA FISIOTERAPIA", "empresa": "3B - MEDICSTOCK", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "ACIDO CITRICO 50% (MAQ. HEMODIALISE) 5L", "area": "JOSENILTON HEMODIALISE", "empresa": "Diálise/Alloxy", "tempo": 12.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "ADAPTADOR PARA INFUSAO DE EQUIPO 2 VIAS", "area": "SCIH", "empresa": "Pontual/Vitagold", "tempo": 5.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "ANTISSEPTICO BUCAL 1000 ML  (CLOREXIDINA 0,12%)", "area": "SCIH", "empresa": "RAVACHE", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "AVENTAL DESCARTAVEL NAO ESTERIL IMPERMEAVEL MANGA LONGA", "area": "SCIH", "empresa": "Tecbond Eirelli", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "CANULA DE TRAQUEOSTOMIA DESC. ESTERIL AJUSTAVEL COM BALAO N 8 (ISENTO DE PVC)", "area": "FISIOTERAPIA MARIANA", "empresa": "CBS /BCI Electroplast", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "CATETER DE LONGA PERMANENCIA (PICC) 5 FR", "area": "GABRIELA 5º ANDAR", "empresa": "HEALTH LINE - POLITEC", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "CATETER INTRAVENOSO PERIFERICO N 14 - TEFLON", "area": "SCIH", "empresa": "JoãoMed/Advantine", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "COBERTURA DE HIDROCOLOIDE EXTRA FINO 10CMX10CM", "area": "CURATIVO - ISABEL", "empresa": "Polar Fix", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "COBERTURA POLIURETANO 5,0cm X 5,7cm FENESTRADO", "area": "CURATIVO - ISABEL", "empresa": "3M do Brasil", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "CURATIVO HIDROCOLOIDE 10 X 10 CM", "area": "CURATIVO - ISABEL", "empresa": "JoãoMed", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "DETERGENTE NEUTRO USO HOSPITLAR 1L", "area": "SCIH", "empresa": "Inspire/Ciclo Farma", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "DRENO DE SUCCAO DESCARTAVEL 3,17 MM (1/8 POL)", "area": "CURATIVO - ISABEL", "empresa": "Pontual/Romsons", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "DRENO DE SUCCAO DESCARTAVEL 4,76 MM ( 3/16)", "area": "CURATIVO - ISABEL", "empresa": "DCS/Vitalsuc", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "DRENO DE SUCCAO DESCARTAVEL 6,35 MM (1/4 POL)", "area": "CURATIVO - ISABEL", "empresa": "DCS/Vitalsuc", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "DRENO DE SUCCAO DESCARTAVEL DE BLAKE ( 4,8MM 15 FR )", "area": "CURATIVO - ISABEL", "empresa": "Cotação/Medicone.", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "EQUIPO MACROGOTAS SEM INJETOR LATERAL SEM FILTRO", "area": "SCIH", "empresa": "Glomed/GETMED", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "FITA MICROPERFURADA TRANSPARENTE 100 MM X 4,5 M", "area": "CURATIVO - ISABEL", "empresa": "WILTEX", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "FRASCO PARA DRENAGEM DE TORAX 1000 ML", "area": "CURATIVO - ISABEL", "empresa": "BIOTEC", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "LAMINA DE BISTURI SEM CABO FEATHER N 11", "area": "DR RENATO -  CENTRO CIRURGICO", "empresa": "ADVANTIVE", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "MASCARA CIRURGICA DESCARTAVEL C/ TIRAS", "area": "SCIH", "empresa": "Soma/Descarpack", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "MASCARA PARA PROTECAO N95", "area": "SCIH", "empresa": "J. F/Life Care", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "SONDA ENDOTRAQUEAL COM BALAO N 6,5", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "Pontual/Medix", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "TOUCA DESCARTAVEL C/ ELASTICO", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "DCS/Anaconda", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENGENHARIA CLÍNICA", "criticidade": "MÉDIA", "descricao": "MICRONEBULIZADOR COM MASCARA ADULTO", "area": "FISIOTERAPIA MARIANA", "empresa": "Bio Santec/Vitagold", "tempo": 8.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENGENHARIA CLÍNICA", "criticidade": "MÉDIA", "descricao": "VALVULA REGULADORA DE PRESSÃO PARA REDE CANALIZADA DE OXIGENIO", "area": "ENGENHARIA CLÍNICA - BRENDA", "empresa": "DCS/Haoxi", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "NUTRIÇÃO", "criticidade": "BAIXA", "descricao": "MODULO DE PROTEINA (CASEICAL / FRESUBIN PROTEIN POWDER)", "area": "NUTRIÇÃO - MARIA JOSÉ", "empresa": "BIOSEN", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "NUTRIÇÃO", "criticidade": "MÉDIA", "descricao": "SUPL.NUTR. P/ USO 0RAL/ENTERAL (NUTRIDRINK COMPACT) BAUNILHA", "area": "NUTRIÇÃO - MARIA JOSÉ", "empresa": "São José/Nestlé", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Março/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "FRALDA DESCARTAVEL INFANTIL GRANDE", "area": "CURATIVO ISABEL", "empresa": "Mili", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "FIOS DE SUTURA", "criticidade": "ALTA", "descricao": "PROLENE 6-0 - 75 CM 2 AG. 3/8 0,93 CM (Infantil)", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "DOC MED / MERIL", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "FIOS DE SUTURA", "criticidade": "ALTA", "descricao": "PROLENE 7-0 - 75 CM 2 AG. 3/8 1,0 CM", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "Bioline", "tempo": 5.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "HEMODINÂMICA", "criticidade": "MÉDIA", "descricao": "CATETER SIMMONS 2, MED. 5 F X 100 CM.", "area": "HEMODINAMICA - VITOR", "empresa": "Sellmed/Shunmei", "tempo": 10.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "HEMODINÂMICA", "criticidade": "ALTA", "descricao": "LACO DE CAPTURA 10 MM X 125 CM CAT. 4F", "area": "HEMODINAMICA - VITOR", "empresa": "Sellmed/Shangai", "tempo": 21.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "HEMODINÂMICA", "criticidade": "ALTA", "descricao": "TORNEIRA DE 4 OU 5 VIAS (MANIFOLD) E 2 OU 3 VALVULAS", "area": "HEMODINAMICA - VITOR", "empresa": "Sellmed/Lepu", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "INSUMOS LOGÍSTICA", "criticidade": "MÉDIA", "descricao": "BOBINA DE PAPEL PARA DISPENSER DE SENHAS", "area": "LOGISTICA", "empresa": "BOBMAX", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "ACIDO PERACETICO GALAO 5L", "area": "CME - ELAINE", "empresa": "CH Trevisan Dias", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "AGULHA DE FISTULA PARA HEMODIALISE ARTERIO - VENOSA 16 G", "area": "GABRIELA HEMODIÁLISE", "empresa": "FORTECARE", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "AGULHA DESCARTAVEL 40 X 12 COM DISPOSITIVO DE SEGURANCA", "area": "SCIH", "empresa": "DESCARPACK", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "ALCA DE POLIPECTOMIA TIPO OVAL PARA BISTURI 230 CM", "area": "GABRIELA HEMODIÁLISE", "empresa": "SCITECH", "tempo": 22.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "AVENTAL DESCARTAVEL NAO ESTERIL IMPERMEAVEL MANGA LONGA", "area": "SCIH", "empresa": "NEO MEDICAL / R3A", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "CADARCO 10MM X 10M", "area": "FISIOTERAPIA MARIANA", "empresa": "SONI", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "CAIXA IMANTADA AZUL GRANDE ESTERIL 10 X 20", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "STERIFARMA", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "CAMPO CIRURGICO IMPERMEAVEL APROX. 60 X 140 CM MAYO", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "BLUE CARE", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "CATETER DE LONGA PERMANENCIA (PICC) 4 FR", "area": "GABRIELA 5º ANDAR", "empresa": "HEALTH PICC", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "CATETER INTRAVENOSO PERIFERICO Y N 24", "area": "SCIH", "empresa": "GLOMED", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "CATETER NASAL TIPO OCULOS ADULTO", "area": "FISIOTERAPIA - MARIANA", "empresa": "MARK MED", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "CATETER NASAL TIPO OCULOS PEDIATRICO", "area": "FISIOTERAPIA - MARIANA", "empresa": "Mark Med", "tempo": 7.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "CATETER TRIPLO LUMEN PARA HEMODIALISE 11,5 FR - 20 CM", "area": "CONCEIÇÃO - HEMODIÁLISE", "empresa": "Alive Heart", "tempo": 8.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "COBERTURA TRANSP 09 X 12 CM FIXA CATETER CENTRAL ADULTO", "area": "SCIH", "empresa": "VITALDERME", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "COLCHAO ANTI-ESCARAS CAIXA DE OVO", "area": "CURATIVO - ISABEL", "empresa": "IMPACTO", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "COMPRESSA DE GAZE ESTERIL 13 FIOS COM RADIOPACO 7,5 X 7,5 CM PCT C/ 20 UNIDADES", "area": "SCIH", "empresa": "AMED", "tempo": 5.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "CURATIVO HIDROCOLOIDE 10 X 10 CM", "area": "CURATIVO - ISABEL", "empresa": "Coloplast/Comfeel Plus", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "DETERGENTE ENZIMATICO GALAO DE 5L", "area": "CME - ELAINE", "empresa": "COSMODERMA", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "DISPOSITIVO PARA VEDACAO DE CATETER (CLAVE)", "area": "SCIH", "empresa": "NETVALVE", "tempo": 4.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "DOSADOR ORAL TIPO SERINGA   1 ML", "area": "Evelise - UIT PED", "empresa": "WILTEX", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "DRENO DE TORAX Nº 22", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "3P Medical", "tempo": 4.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "DRENO DE TORAX Nº 36", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "FOYOMED", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "ELETRODO DE MONITORIZACAO DESCARTAVEL ( ERGOMETRIA/HOLTER )", "area": "AMBULATORIO - MARCIA", "empresa": "Brazmix", "tempo": 6.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "ELETRODO DE MONITORIZACAO DESCARTAVEL ADULTO", "area": "AMBULATORIO - MARCIA", "empresa": "NEUPHARMA", "tempo": 22.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "EMBALAGEM P/ ESTERILIZACAO AUTOCLAVE 200 X 400", "area": "CME - ELAINE", "empresa": "Neo Medical", "tempo": 5.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "FAIXA PARA ABDOMEN E TORAX G/GG", "area": "CURATIVO - ISABEL", "empresa": "Isemed", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "FIXADOR SONDA NASOENTERAL INFANTIL", "area": "EMTN- EVELISE", "empresa": "Expert", "tempo": 8.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "FRASCO PARA DRENAGEM DE TORAX 1000 ML", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "Health Quality", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "INVOLUCRO DESC.P/ESTERILIZACAO EM FOLHA POLIPROP.E CELULOSE 51X63CM 45", "area": "CME - ELAINE", "empresa": "Blue Care", "tempo": 5.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "ISOLADOR DE PRESSAO PARA MAQUINA HEMODIALISADORA", "area": "HEMODIÁLISE - CONCEIÇÃO", "empresa": "GVS do Brasil", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "KIT CURATIVO PRESSAO NEGATIVA 10cm X 20cm", "area": "CURATIVO - ISABEL", "empresa": "PREVENA / 3M-KCI / MOGAMI", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "KIT P/ LIGADURA DE VARIZES DE ESOFOGO", "area": "GABRIELA - PEDIATRIA", "empresa": "STERIS", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "LUBRIFICANTE DE INSTRUMENTAIS 5L", "area": "CME - ELAINE", "empresa": "MEDICPRO", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "LUVA CIRURGICA ESTERIL N 8,0  PAR", "area": "SCIH", "empresa": "MEDIX", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "MALHA TUBULAR ORTOP.,100% ALGODAO CRU,10CM X 25M", "area": "AMBULATÓRIO - MARCIA", "empresa": "MSO", "tempo": 7.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "MASCARA CIRURGICA DESCARTAVEL C/ ELASTICO", "area": "SCIH", "empresa": "TOPDESC", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "MASCARA PARA PROTECAO N95", "area": "SCIH", "empresa": "Alliance", "tempo": 4.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "PADRONIZAÇÃO", "descricao": "PAPEL INDICADOR DE PH 0-14", "area": "MEDICINA NUCLEAR - DRA. CAROLINA", "empresa": "Celerity Supplies", "tempo": 5.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "PROTETOR P/ BANHEIRA INFANTIL DESCARTAVEL", "area": "PEDIATRIA - CONCEIÇÃO", "empresa": "PROTECTOR", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "SAPATILHA CIRURGICA MALHA (PAR)", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "MEDIX", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "SERINGA DESC. LUER LOCK 60 ML", "area": "SCIH", "empresa": "ADVANTIVE / MEDIMAC", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "SISTEMA DE TRANSFERENCIA DE SOLUCAO 7CM", "area": "SCIH", "empresa": "WILTEX", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "SONDA GASTRICA LONGA N 12", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "SOLIDOR", "tempo": 4.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "SONDA URETRAL N 12", "area": "SCIH", "empresa": "NINGBO FOYOMED", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "TAMPA PROTETORA USO CONECTOR VALVULADO", "area": "SCIH", "empresa": "SOL-M", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "TOALHA DE PAPEL SIMPLES INTERFOLHADA", "area": "CARLOS GRANDÃO - SAA", "empresa": "LICITA PAPER", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "TOUCA DESCARTAVEL C/ ELASTICO", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "DEJAMARO", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENGENHARIA CLÍNICA", "criticidade": "ALTA", "descricao": "CONJUNTO P/ NEBULIZACAO CONTINUA ADULTO", "area": "FISIOTERAPIA - MARIANA", "empresa": "VENTCARE", "tempo": 6.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENGENHARIA CLÍNICA", "criticidade": "BAIXA", "descricao": "LAMINA DE LARINGOSCOPIO RETA,ACO INOX,TAMANHO 00", "area": "ENGENHARIA CLÍNICA - BRENDA", "empresa": "SANKEY / MIKATOS", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENGENHARIA CLÍNICA", "criticidade": "BAIXA", "descricao": "MASCARA FACIAL, NÃO ESTERIL,EM PVC ADAPTAVEL,DE NÃO REINALAÇÃO ADULTO", "area": "FISIOTERAPIA - MARIANA", "empresa": "Medix", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENGENHARIA CLÍNICA", "criticidade": "MÉDIA", "descricao": "MICRONEBULIZADOR COM MASCARA ADULTO", "area": "FISIOTERAPIA - MARIANA", "empresa": "VITALGOLD", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "NUTRIÇÃO", "criticidade": "BAIXA", "descricao": "FORMULA INFANTIL PARA PREMATUROS (APTAMIL PRÉ) DANTE", "area": "NUTRIÇÃO - MARIA JOSÉ", "empresa": "APTAMIL PRE PROEXPERTP - DANONE", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "NUTRIÇÃO", "criticidade": "BAIXA", "descricao": "SUPL.NUTR. P/ USO 0RAL/ENTERAL ISENTO DE LACTOSE E GLUTEN", "area": "NUTRIÇÃO - MARIA JOSÉ", "empresa": "NESTLE", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "NUTRIÇÃO", "criticidade": "BAIXA", "descricao": "SUPLEM.NUTR.C/FIBRAS DIET.ORAL/ENTERAL EM PO ADULTO (LACTOFOS) SIMBIOTICO", "area": "NUTRIÇÃO - MARIA JOSÉ", "empresa": "VITAFOR", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "ODONTOLOGIA", "criticidade": "BAIXA", "descricao": "IODOFORMIO EM PO FR. 10 GRAMAS", "area": "ODONTO - DRA. VALÉRIA", "empresa": "MAQUIRA / A2XR", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "OPME", "criticidade": "ALTA", "descricao": "CONJUNTO DO CATETER DE BALAO INTRA-AORTICO (7F A 7,5F) (30CC A 35CC)", "area": "CENTRO CIRURGICO ELIANA", "empresa": "GEITNGE / MAQUET", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "FRALDA DESCARTAVEL INFANTIL GRANDE", "area": "UTI PEDRIÁTRICA - EVELISE", "empresa": "Cremer", "tempo": 4.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "PADRONIZAÇÃO", "descricao": "BORRIFADOR DESCARTAVEL PARA XILOCAINA", "area": "MARCIA - ENFERMEIRA", "empresa": "LEVER MEDICAL", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "ODONTOLOGIA", "criticidade": "PADRONIZAÇÃO", "descricao": "LIMA ENDODONTICA TIPO K 25MM N°06", "area": "ODONTOLOGIA", "empresa": "SHENZHEN PERFECT MEDICAL", "tempo": 7.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "ODONTOLOGIA", "criticidade": "PADRONIZAÇÃO", "descricao": "IONOMERO DE VIDRO FOTOPOLIMERIZAVEL", "area": "ODONTOLOGIA", "empresa": "STERILANCE", "tempo": 5.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "ODONTOLOGIA", "criticidade": "PADRONIZAÇÃO", "descricao": "PASTA PROFILATICA COM FLUOR", "area": "ODONTOLOGIA", "empresa": "IODONTOSUL", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "ODONTOLOGIA", "criticidade": "PADRONIZAÇÃO", "descricao": "CIMENTO CIRURGICO PERIODONTAL COE-PARK REGULAR", "area": "ODONTOLOGIA", "empresa": "MAQUIRA", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "ODONTOLOGIA", "criticidade": "PADRONIZAÇÃO", "descricao": "LENCOL DE BORRACHA PARA ISOLAMENTO DENTARIO", "area": "ODONTOLOGIA", "empresa": "ALP", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "INSUMOS LOGÍSTICA", "criticidade": "PADRONIZAÇÃO", "descricao": "TECIDO COURVIN", "area": "SAA - CARLOS", "empresa": "CIPATEX - PEVECRON", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "PADRONIZAÇÃO", "descricao": "AVENTAL DE CHUMBO M", "area": "HEMODINAMICA - VITOR", "empresa": "PLANIDEIA", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "PADRONIZAÇÃO", "descricao": "AVENTAL DE CHUMBO G", "area": "HEMODINAMICA - VITOR", "empresa": "PLANIDEIA", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Abril/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "PADRONIZAÇÃO", "descricao": "AVENTAL DE CHUMBO GG", "area": "HEMODINAMICA - VITOR", "empresa": "PLANIDEIA", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "ESCRITÓRIO", "criticidade": "BAIXA", "descricao": "FICHA CLINICA ANESTESIA C/ 50 UNID (02 VIAS)", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "COP GRAFICA", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "FIOS DE SUTURA", "criticidade": "MÉDIA", "descricao": "ADESIVO CIRURGICO PELE (CIANOCRILATO) 0,5ML", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "BIOLINE", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "FIOS DE SUTURA", "criticidade": "MÉDIA", "descricao": "ALGODAO N. 2-0 AGULHA DE 3/8 X 3,0 CM", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "Shalon", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "FIOS DE SUTURA", "criticidade": "MÉDIA", "descricao": "ALGODAO N. 4-0 15 X 45 CM", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "BIOLINE", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "FIOS DE SUTURA", "criticidade": "ALTA", "descricao": "MONOCRYL N. 4-0 - 45 CM 1 AG.3/8 1,9 CM", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "BIOLINE", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "FIOS DE SUTURA", "criticidade": "MÉDIA", "descricao": "PROLENE 0 75 CM 1 AG. 1/2 4,0 CM", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "Pontual", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "FIOS DE SUTURA", "criticidade": "ALTA", "descricao": "PROLENE 7-0 - 75 CM 2 AG. 3/8 1,0 CM", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "MICROSUTURE", "tempo": 4.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "INSUMOS LOGÍSTICA", "criticidade": "ALTA", "descricao": "ETIQUETA AUTO ADESIVA 03 CARREIRAS 3,5MM  X 2,5MM ROLO  (ZEBRA ZM400)", "area": "CME - ELAINE", "empresa": "BMA ETIQUETAS", "tempo": 5.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "INSUMOS LOGÍSTICA", "criticidade": "MÉDIA", "descricao": "ETIQUETA AUTO ADESIVA 03 CARREIRAS 3,5MM  X 2,5MM ROLO (COUCHÊ)", "area": "CME - ELAINE", "empresa": "BOBMAX", "tempo": 5.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "ALCOOL ETILICO EM GEL PARA BEIRA LEITO 500ML", "area": "SCIH", "empresa": "SULMAR", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "AVENTAL DESC. NAO ESTERIL MANGA LONGA BRANCO 30G/M²", "area": "SCIH", "empresa": "Infiniti", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "CAIXA IMANTADA AZUL GRANDE ESTERIL 10 X 20", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "Healt Quality", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "CANULA DE TRAQUEOSTOMIA DESC. ESTERIL AJUSTAVEL COM BALAO N 8 (ISENTO DE PVC)", "area": "FISIOTERAPIA MARIANA", "empresa": "Gold Care", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "CANULA DE TRAQUEOSTOMIA DESCARTAVEL ESTERIL COM BALAO N 9", "area": "FISIOTERAPIA MARIANA", "empresa": "SOLIDOR", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "CATETER DE LONGA PERMANENCIA (PICC) 5 FR", "area": "GABRIELA 5º ANDAR", "empresa": "BLENTA PORT", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "CATETER INTRAVENOSO RADIOPACO ESTERIL 24G - NEONATAL", "area": "UTI PEDIATRICA - EVELISE", "empresa": "POLYMED", "tempo": 12.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "COBERTURA DE POLIURETANO MED: 22x25CM ( MEPILEX )", "area": "CURATIVO - ISABEL", "empresa": "PolarFix", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "COBERTURA TRANSP 09 X 12 CM FIXA CATETER CENTRAL ADULTO", "area": "SCIH", "empresa": "WOUNDCARE", "tempo": 6.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "COBERTURA TRANSP 7,0 X 9,0 CM FENESTRA ADULTO/PERIFERICO", "area": "SCIH", "empresa": "PROCITEX/CREMER", "tempo": 6.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "COMPRESSA DE GAZE ESTERIL 13 FIOS COM RADIOPACO 7,5 X 7,5 CM PCT C/ 20 UNIDADES", "area": "SCIH", "empresa": "MEDI HOUSE", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "COMPRESSA DE GAZE NAO ESTERIL 13 FIOS 7,5 X 7,5 CM PCT C/ 500 UNIDADES", "area": "SCIH", "empresa": "PBL", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "CURATIVO A BASE DE POLIMERO E ASSOC. 7,5CM X 7,5CM", "area": "CURATIVO - ISABEL", "empresa": "COLOPLAST / BIATAIN", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "CURATIVO A BASE DE POLIURETANO E ASSOC. 15CM X 20CM", "area": "CURATIVO - ISABEL", "empresa": "COLOPLAST / BIATAIN", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "CURATIVO ABSORVENTE AUTO-ADERENTE 25 CM X 10 CM", "area": "CURATIVO - ISABEL", "empresa": "SOL - CARE", "tempo": 5.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "DRENO DE SUCCAO DESCARTAVEL DE BLAKE ( 3,2MM 10 FR )", "area": "CURATIVO - ISABEL", "empresa": "FORTUNE", "tempo": 6.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "DRENO DE SUCCAO DESCARTAVEL DE BLAKE ( 6,4MM 19 FR )", "area": "CURATIVO - ISABEL", "empresa": "VICARE", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "DRENO DE TORAX Nº 32", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "FOYOMED", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "ELETRODO DE MONITORIZACAO DESCARTAVEL ( ERGOMETRIA/HOLTER )", "area": "AMBULATORIO - MARCIA", "empresa": "Ciex", "tempo": 4.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "ELETRODO DE MONITORIZACAO DESCARTAVEL ADULTO", "area": "AMBULATORIO - MARCIA", "empresa": "Savemed", "tempo": 4.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "EQUIPO MACROGOTAS SEM INJETOR LATERAL SEM FILTRO", "area": "SCIH", "empresa": "MEDIX", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "EQUIPO PRESSAO VENOSA CENTRAL", "area": "SCIH", "empresa": "MP HOSPITALAR", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "EXTENSOR BOMBA SERINGA FOTO 120 CM", "area": "SCIH", "empresa": "LIFEMED", "tempo": 4.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "FILTRO BARREIRA PARA CIRCUITO RESPIRADOR BB 100", "area": "FISIOTERAPIA - MARIANA", "empresa": "YOUMIDITY", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "FILTRO DE AGUA PARA PAREDE ( AP 230 AQUALAR )", "area": "HEMODIÁLISE - CONCEIÇÃO", "empresa": "BBI REFIL", "tempo": 9.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "FITA TESTE PARA AUTOCLAVE 19CM X 30M", "area": "CME - ELAINE", "empresa": "CIEX", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "INDICADOR QUIMICO 134 GRAUS - 4 MINUTOS", "area": "CME - ELAINE", "empresa": "STERICONTROL / RECOMMED", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "LAMINA DE BISTURI SEM CABO FEATHER N 11", "area": "DR RENATO -  CENTRO CIRURGICO", "empresa": "CBS", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "LAMINA DE BISTURI SEM CABO N 22", "area": "CURATIVO - ISABEL", "empresa": "MEDIX", "tempo": 4.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "LUVA CIRURGICA ESTERIL N 7,0 PAR", "area": "SCIH", "empresa": "LIVE", "tempo": 4.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "LUVA CIRURGICA ESTERIL N 8,0  PAR", "area": "SCIH", "empresa": "LIVE", "tempo": 4.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "MASCARA PARA PROTECAO N95", "area": "SCIH", "empresa": "KSN", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "PANO MULTIUSO PARA DESINFECÇÃO", "area": "SCIH", "empresa": "C/E", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "PADRONIZAÇÃO", "descricao": "PAPEL INDICADOR DE PH 0-14", "area": "MEDICINA NUCLEAR - DRA. CAROLINA", "empresa": "PERFECTA", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "PULSEIRA CLASSIFICAÇÃO DE RISCO (COR LARANJA)", "area": "SEC - SELMA", "empresa": "TYVEK DUPONT", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "SABAO ANTI-SEPTICO A BASE DE CLOREXIDINA 2% ALCOOL ETILICO 4% 800ML", "area": "SCIH", "empresa": "RIOQUIMICA", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "SERINGA DESC. LUER LOCK 60 ML", "area": "SCIH", "empresa": "Gold Care", "tempo": 7.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "SERINGA DESCARTAVEL LUER SLIP 1 ML", "area": "SCIH", "empresa": "MEDIX", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "SOLUCAO PARA LIMPEZA E REMOCAO DE BIOFILMES DE FERIDAS 350ML", "area": "CURATIVO - ISABEL", "empresa": "PROVIDE", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "SONDA ENDOTRAQUEAL COM BALAO N 04", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "MEDIS", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "SONDA ENDOTRAQUEAL COM BALAO N 06", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "MEDIS", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "SONDA URETRAL N 10", "area": "SCIH", "empresa": "MEDIX", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "TESTE RAPIDO P/ DETECCAO DE ANTIGENO COVID", "area": "SCIH", "empresa": "Signaz", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "TORNEIRA DE INFUSAO LUER LOCK 3 VIAS", "area": "SCIH", "empresa": "SAVEMED", "tempo": 4.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENGENHARIA CLÍNICA", "criticidade": "BAIXA", "descricao": "SISTEMA DE PRESSURIZAÇÃO PARA INFUSÃO DE LIQUIDOS", "area": "CENTRO CIRURGICO", "empresa": "GC MEDICA", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MEDICAMENTOS", "criticidade": "ALTA", "descricao": "ALCOOL ETILICO GEL FR. 800 ML", "area": "FARMÁCIA - SANDRA", "empresa": "HANDS FREE", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "NUTRIÇÃO", "criticidade": "ALTA", "descricao": "DIETA ENTERAL SISTEMA FECHADO 1,5 KCAL (OSMOLITE HICAL / FRESUBIN HP)", "area": "NUTRIÇÃO - MARIA JOSÉ", "empresa": "NESTLE", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "NUTRIÇÃO", "criticidade": "BAIXA", "descricao": "MODULO DE PROTEINA (CASEICAL / FRESUBIN PROTEIN POWDER)", "area": "NUTRIÇÃO - MARIA JOSÉ", "empresa": "Fresenius Kabi", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "ODONTOLOGIA", "criticidade": "BAIXA", "descricao": "SISTEMA ADESIVO FOTOPOLIMERIZAVEL", "area": "ODONTO - DRA. VALÉRIA", "empresa": "DL DENTAL", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "OPME", "criticidade": "ALTA", "descricao": "CONJUNTO DO CATETER DE BALAO INTRA-AORTICO 8FR 40CC", "area": "CENTRO CIRURGICO ELIANA", "empresa": "Getinge", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "SCIH", "criticidade": "NÃO INFORMADA", "descricao": "EXTENSOR P/ EQUIPO C/ LUER LOCK 120 CM (INFANTIL)", "area": "SCIH", "empresa": "BIOSANI", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "RETRATOR DE INCISÃO P", "area": "CENTRO CIRURGICO - DRA JANAYNA", "empresa": "Isomed", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "INSUMOS LOGÍSTICA", "criticidade": "PADRONIZAÇÃO", "descricao": "TECIDO COURVIN", "area": "SAA - CARLOS", "empresa": "ROMPLAS", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "PADRONIZAÇÃO", "descricao": "TUBO CONECTOR", "area": "FISIOTERAPIA - MARIANA", "empresa": "PROTEC", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "PADRONIZAÇÃO", "descricao": "SISTEMA PARA NEBULIZAÇÃO", "area": "FISIOTERAPIA - MARIANA", "empresa": "PROTEC", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENGENHARIA CLÍNICA", "criticidade": "MÉDIA", "descricao": "VALVULA REGULADORA DE PRESSÃO PARA REDE CANALIZADA DE OXIGENIO", "area": "GTO - GIVALDO", "empresa": "CALTI", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Maio/26", "grupo": "MATERIAL DE ENGENHARIA CLÍNICA", "criticidade": "MÉDIA", "descricao": "LAMINA DE LARINGOSCOPIO RETA EM ACO INOX N°3", "area": "GTO - GIVALDO", "empresa": "PROTEC AKIHIRO", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "FIOS DE SUTURA", "criticidade": "MÉDIA", "descricao": "ALGODAO N. 0 15 X 45 CM", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "SHALON", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "FIOS DE SUTURA", "criticidade": "PADRONIZAÇÃO", "descricao": "FIO DE AÇO 0 DE 3,5 METRIC 4X 45 CM AGULHA 1/2 26 MM ACIFLEX ETHICON 626", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "BIOLINE", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "FIOS DE SUTURA", "criticidade": "ALTA", "descricao": "PROLENE 3-0 - 75 CM 2 AG.1/2 2,0 CM", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "SHALON", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "FIOS DE SUTURA", "criticidade": "ALTA", "descricao": "PROLENE 4-0 - 75CM 2 AG.1/2 1,5 CM", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "SHALON", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "INSUMOS LOGÍSTICA", "criticidade": "ALTA", "descricao": "COPO DESCARTAVEL PARA AGUA", "area": "SAA - CARLOS", "empresa": "TJLIMP", "tempo": 4.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "INSUMOS LOGÍSTICA", "criticidade": "BAIXA", "descricao": "PILHA ALCALINA PEQUENO (AA)", "area": "TI - ALDO", "empresa": "MAXMIDIA", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "INSUMOS LOGÍSTICA", "criticidade": "BAIXA", "descricao": "PILHA PALITO (AAA)", "area": "TI - ALDO", "empresa": "MAXMIDIA", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "ANTISSEPTICO BUCAL COMPOSTO GEL UMECTANTE (SALIVA ARTIFICAL)", "area": "VALÉRIA- AMBULATÓRIO/ ODONTO", "empresa": "ODOMED", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "AVENTAL DESC. NAO ESTERIL MANGA LONGA BRANCO 30G/M²", "area": "SCIH", "empresa": "MEDIX", "tempo": 4.0, "status": "ANÁLISE EM ATRASO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "AVENTAL DESCARTAVEL NAO ESTERIL IMPERMEAVEL MANGA LONGA", "area": "SCIH", "empresa": "MEDIX", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "CANULA DE TRAQUEOSTOMIA DESC. ESTERIL AJUSTAVEL COM BALAO N 9 (ISENTO DE PVC)", "area": "FISIOTERAPIA MARIANA", "empresa": "GC MEDICA", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "CATETER DE LONGA PERMANENCIA (PICC) 4 FR", "area": "GABRIELA 5º ANDAR", "empresa": "POLITEC", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "CATETER INTRAV.RADIOPACO DISP.SEGURANCA 20G", "area": "SCIH", "empresa": "TKL", "tempo": 7.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "CATETER INTRAV.RADIOPACO DISP.SEGURANCA 22G", "area": "SCIH", "empresa": "MICROSUTURE", "tempo": 5.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "COBERTURA TRANSP 09 X 12 CM FIXA CATETER CENTRAL ADULTO", "area": "SCIH", "empresa": "NETMEDICAL", "tempo": 5.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "COBERTURA TRANSP 7,0 X 9,0 CM FENESTRA ADULTO/PERIFERICO", "area": "SCIH", "empresa": "NETFILM", "tempo": 7.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "COLETOR RIGIDO 7 LITROS P/RESIDUOS TOXICOS (LARANJA)", "area": "SEGIRANÇA DO TRABALHO - SÔNIA", "empresa": "BIOTEC", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "COLETOR DE SECRECAO 3500 ML FRASCO", "area": "CURATIVO - ISABEL", "empresa": "BIOTEC", "tempo": 7.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "DRENO DE SUCCAO DESCARTAVEL DE BLAKE ( 4,8MM 15 FR )", "area": "CURATIVO - ISABEL", "empresa": "VITALSUC", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "DRENO DE TORAX Nº 32", "area": "CENTRO CIRURGICO - ELIANA", "empresa": "MESHARP", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "ELETRODO DE MONITORIZACAO DESCARTAVEL NEONATAL", "area": "UTI PEDIÁTRICA EVELISE", "empresa": "PONTUAL", "tempo": 5.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "EQUIPO MACROGOTAS SEM INJETOR LATERAL SEM FILTRO", "area": "SCIH", "empresa": "BIONDI & BUSCH", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "EQUIPO PARA DIETA ENTERAL SEM FILTRO", "area": "UTI 2 MARA", "empresa": "MEDIX", "tempo": 4.0, "status": "ANÁLISE EM ATRASO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "FIXADOR PARA TUBO ENDOTRAQUEAL C/ VELCRO  ADULTO", "area": "FISIOTERAPIA - MARIANA", "empresa": "DE PAULI", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "HASTE PARA HIGIENIZACAO ORAL", "area": "ODONTOLOGIA", "empresa": "KOLPLAST / APS", "tempo": 3.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "INDICADOR QUIMICO 134 GRAUS - 4 MINUTOS", "area": "CME - ELAINE", "empresa": "STERISTAR", "tempo": 9.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "INVOLUCRO PARA ESTERILIZACAO 1,20 X 1,20M", "area": "CME - ELAINE", "empresa": "SISPACK", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "LENCOL DE PAPEL DESCARTAVEL 70CM X 50M EM ROLO", "area": "AMBULATÓRIO - NEUZA", "empresa": "LUNAPAPER", "tempo": 14.0, "status": "ANÁLISE EM ATRASO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "BAIXA", "descricao": "LUVA CIRURGCIA DESCARTAVEL ISENTO DE LATEX SEM TALCO Nº 7,0", "area": "SCIH", "empresa": "NUZONE", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "ALTA", "descricao": "TUBO COLETA DE SANGUE C/ EDTA 4ML (TAMPA ROXA)", "area": "LABORATÓRIO", "empresa": "FIRSTLAB", "tempo": 6.0, "status": "ANÁLISE EM ATRASO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENGENHARIA CLÍNICA", "criticidade": "ALTA", "descricao": "VACUOMETRO", "area": "GTO", "empresa": "HAOXI", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENGENHARIA CLÍNICA", "criticidade": "MÉDIA", "descricao": "VALVULA REGULADORA DE PRESSÃO PARA CILINDRO DE OXIGENIO", "area": "GTO", "empresa": "JPJ", "tempo": 0.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "NUTRIÇÃO", "criticidade": "BAIXA", "descricao": "AGUA MINERAL DE 510 ML COM GAS", "area": "NUTRIÇÃO - MARIA JOSÉ", "empresa": "ECOLEVE", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "NUTRIÇÃO", "criticidade": "BAIXA", "descricao": "MODULO DE PROTEINA (CASEICAL / FRESUBIN PROTEIN POWDER)", "area": "NUTRIÇÃO - MARIA JOSÉ", "empresa": "VITAFOR", "tempo": 6.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "NUTRIÇÃO", "criticidade": "BAIXA", "descricao": "MODULO DIETA ENTERAL/ORAL A BASE MALTODEXTRINA (N-DESTRIN/NIDEX)", "area": "NUTRIÇÃO - MARIA JOSÉ", "empresa": "CHOLMED", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "ODONTOLOGIA", "criticidade": "BAIXA", "descricao": "AGULHA GENGIVAL DESCARTAVEL CALIBRE G-30 CURTA", "area": "ODONTO - DRA. VALÉRIA", "empresa": "D.CARE", "tempo": 4.0, "status": "ANÁLISE EM ATRASO"}, {"mes": "Junho/26", "grupo": "ODONTOLOGIA", "criticidade": "BAIXA", "descricao": "SISTEMA ADESIVO FOTOPOLIMERIZAVEL", "area": "ODONTO - DRA. VALÉRIA", "empresa": "3M", "tempo": 6.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "MATERIAL DE ENFERMAGEM", "criticidade": "MÉDIA", "descricao": "RETRATOR DE INCISÃO P", "area": "CENTRO CIRURGICO - DRA JANAYNA", "empresa": "COTAÇÃO", "tempo": 1.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "ODONTOLOGIA", "criticidade": "PADRONIZAÇÃO", "descricao": "LIMA ENDODONTICA TIPO K 25MM N°06", "area": "ODONTOLOGIA", "empresa": "DENTAL CREMER", "tempo": 2.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "ODONTOLOGIA", "criticidade": "PADRONIZAÇÃO", "descricao": "PASTA PROFILATICA COM FLUOR", "area": "ODONTOLOGIA", "empresa": "IODONTOSUL", "tempo": 6.0, "status": "DEVOLVIDO"}, {"mes": "Junho/26", "grupo": "GTO", "criticidade": "PADRONIZAÇÃO", "descricao": "REFLETORES 200W", "area": "SAA - CARLOS GRANDÃO", "empresa": "MAYLER", "tempo": 1.0, "status": "DEVOLVIDO"}];
-</script>
-<script>
-// ══════════════════════════════════════════
-// THEME
-// ══════════════════════════════════════════
 function setTheme(t) {
   document.documentElement.setAttribute('data-theme', t);
   document.getElementById('btnDark').classList.toggle('active', t === 'dark');
   document.getElementById('btnLight').classList.toggle('active', t === 'light');
-  // Redraw charts so Chart.js picks up new CSS-derived colors
-  if (typeof update === 'function') update();
+  localStorage.setItem('amostras_theme', t);
+  if (RAW_RECORDS.length) update();
 }
 document.getElementById('btnDark').addEventListener('click', () => setTheme('dark'));
 document.getElementById('btnLight').addEventListener('click', () => setTheme('light'));
+document.getElementById('btnHelp').addEventListener('click', () => {
+  document.getElementById('sourceHelp').classList.toggle('show');
+});
 
-// ══════════════════════════════════════════
-// STATE & FILTERS
-// ══════════════════════════════════════════
-const MESES_ORDEM = ["Novembro/25","Dezembro/25","Janeiro/26","Fevereiro/26","Março/26","Abril/26","Maio/26","Junho/26"];
+let RAW_RECORDS = [];
+const MESES_CANON = ["NOVEMBRO","DEZEMBRO","JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO","JULHO","AGOSTO","SETEMBRO","OUTUBRO"];
+let MESES_ORDEM = [];
+
+function setStatus(kind, text) {
+  const el = document.getElementById('sourceStatus');
+  el.className = 'source-status ' + kind;
+  document.getElementById('sourceStatusText').textContent = text;
+}
+
+function parseSheetName(name) {
+  const n = name.toUpperCase();
+  for (const mes of MESES_CANON) {
+    if (n.includes(mes)) {
+      const yearMatch = name.match(/20\d{2}/);
+      const year = yearMatch ? yearMatch[0].slice(2) : (mes === 'NOVEMBRO' || mes === 'DEZEMBRO' ? '25' : '26');
+      const cap = mes.charAt(0) + mes.slice(1).toLowerCase();
+      return cap + '/' + year;
+    }
+  }
+  return null;
+}
+
+function normCrit(raw) {
+  if (raw === null || raw === undefined) return null;
+  const c = String(raw).trim().toUpperCase();
+  if (!c) return null;
+  if (c.includes('ALTA')) return 'ALTA';
+  if (c.includes('MÉDIA') || c.includes('MEDIA')) return 'MÉDIA';
+  if (c.includes('BAIXO') || c.includes('BAIXA')) return 'BAIXA';
+  if (c.includes('PADRON')) return 'PADRONIZAÇÃO';
+  return null;
+}
+
+function normGrupo(raw) {
+  if (!raw) return 'NÃO INFORMADO';
+  let g = String(raw).trim().toUpperCase();
+  const map = {
+    'MATERIAL ENFERMAGEM': 'MATERIAL DE ENFERMAGEM',
+    'FIO DE SUTURA': 'FIOS DE SUTURA',
+    'MATERIAL DE ENGENHARIA CLINICA': 'MATERIAL DE ENGENHARIA CLÍNICA',
+    'INSUMOS LOGISTICOS': 'INSUMOS LOGÍSTICA',
+  };
+  return map[g] || g;
+}
+
+function excelSerialToDate(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (v instanceof Date) return v;
+  if (typeof v === 'number') {
+    const utc_days = Math.floor(v - 25569);
+    const utc_value = utc_days * 86400;
+    return new Date(utc_value * 1000);
+  }
+  const s = String(v).trim();
+  // dd/mm/yyyy (Google Sheets locale pt-BR export)
+  const br = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (br) return new Date(parseInt(br[3]), parseInt(br[2])-1, parseInt(br[1]));
+  const d = new Date(s);
+  return isNaN(d) ? null : d;
+}
+
+function daysBetween(a, b) {
+  if (!a || !b) return null;
+  const ms = b.getTime() - a.getTime();
+  return Math.round(ms / 86400000);
+}
+
+function parseCSV(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i+1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else field += c;
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ',') { row.push(field); field = ''; }
+      else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+      else if (c === '\r') { /* skip */ }
+      else field += c;
+    }
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r => r.some(c => c !== ''));
+}
+
+function parseSheetCSV(text, mesLabel) {
+  const rows = parseCSV(text);
+  if (!rows.length) return [];
+
+  let headerIdx = -1;
+  let colMap = {};
+  for (let i = 0; i < Math.min(rows.length, 8); i++) {
+    const row = rows[i].map(c => String(c).trim().toUpperCase());
+    if (row.some(c => c.includes('GRUPO')) && row.some(c => c.includes('DATA') && c.includes('ENVIO'))) {
+      headerIdx = i;
+      row.forEach((c, idx) => {
+        if (c.includes('GRUPO')) colMap.grupo = idx;
+        else if (c.includes('CRITICID')) colMap.crit = idx;
+        else if (c.includes('DESCRI')) colMap.desc = idx;
+        else if (c.includes('ÁREA') || c.includes('AREA')) colMap.area = idx;
+        else if (c.includes('EMPRESA') || c.includes('MARCA')) colMap.empresa = idx;
+        else if (c.includes('DATA') && c.includes('ENVIO')) colMap.envio = idx;
+        else if (c.includes('PRAZO')) colMap.prazo = idx;
+        else if (c.includes('DATA') && c.includes('DEVOLU')) colMap.devol = idx;
+        else if (c.includes('TEMPO')) colMap.tempo = idx;
+        else if (c === 'STATUS') colMap.status = idx;
+      });
+      break;
+    }
+  }
+  if (headerIdx === -1 || colMap.grupo === undefined) return [];
+
+  const records = [];
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row) continue;
+    const envioRaw = colMap.envio !== undefined ? row[colMap.envio] : null;
+    if (envioRaw === null || envioRaw === undefined || envioRaw === '') continue;
+
+    const grupoRaw = colMap.grupo !== undefined ? row[colMap.grupo] : null;
+    if (!grupoRaw || String(grupoRaw).trim().toUpperCase() === 'GRUPO') continue;
+
+    const crit = normCrit(colMap.crit !== undefined ? row[colMap.crit] : null) || 'NÃO INFORMADA';
+    const desc = colMap.desc !== undefined && row[colMap.desc] ? String(row[colMap.desc]).trim() : '';
+    const area = colMap.area !== undefined && row[colMap.area] ? String(row[colMap.area]).trim() : 'NÃO INFORMADA';
+    const empresa = colMap.empresa !== undefined && row[colMap.empresa] ? String(row[colMap.empresa]).trim() : 'NÃO INFORMADA';
+
+    let statusRaw = colMap.status !== undefined ? row[colMap.status] : null;
+    let status = statusRaw ? String(statusRaw).trim().toUpperCase() : null;
+    if (status === 'ANALISE EM ATRASO') status = 'ANÁLISE EM ATRASO';
+    if (!['DEVOLVIDO', 'EM TESTE', 'ANÁLISE EM ATRASO'].includes(status)) status = null;
+
+    const dEnvio = excelSerialToDate(envioRaw);
+    const dDevol = colMap.devol !== undefined ? excelSerialToDate(row[colMap.devol]) : null;
+    const dPrazo = colMap.prazo !== undefined ? excelSerialToDate(row[colMap.prazo]) : null;
+
+    let tempoRaw = colMap.tempo !== undefined ? row[colMap.tempo] : null;
+    let tempo = tempoRaw !== null && tempoRaw !== '' && !isNaN(Number(tempoRaw)) ? Number(tempoRaw) : null;
+    if (tempo === null && dEnvio && dDevol) tempo = daysBetween(dEnvio, dDevol);
+    if (tempo === null) tempo = 0;
+
+    if (!status) {
+      if (dDevol) status = 'DEVOLVIDO';
+      else if (dPrazo && new Date() > dPrazo) status = 'ANÁLISE EM ATRASO';
+      else status = 'EM TESTE';
+    }
+
+    records.push({ mes: mesLabel, grupo: normGrupo(grupoRaw), criticidade: crit, descricao: desc, area, empresa, tempo: Number(tempo) || 0, status });
+  }
+  return records;
+}
+
+
+function normMesLabel(raw) {
+  // accepts "Janeiro/26", "JANEIRO/2026", "janeiro-26", "NOVEMBRO" (no year), etc.
+  const m = raw.match(/([A-Za-zÀ-ÿ]+)[\s\/\-]*(\d{2,4})?/);
+  if (!m) return null;
+  const nomeRaw = m[1].toUpperCase();
+  const idx = MESES_CANON.findIndex(mc => mc === nomeRaw || mc.startsWith(nomeRaw.slice(0,3)));
+  if (idx === -1) return null;
+  let ano = m[2];
+  if (!ano) {
+    // No year in sheet name: Novembro/Dezembro default to current cycle's first year (25), others to 26
+    ano = (idx === 0 || idx === 1) ? '25' : '26'; // NOVEMBRO=0, DEZEMBRO=1 in MESES_CANON
+  } else if (ano.length === 4) {
+    ano = ano.slice(2);
+  }
+  const cap = MESES_CANON[idx].charAt(0) + MESES_CANON[idx].slice(1).toLowerCase();
+  return cap + '/' + ano;
+}
+
+function parseWorkbook(wb) {
+  const records = [];
+  const skipSheets = ['RESUMO', 'LL', 'LISTA DE MATERIAIS'];
+  wb.SheetNames.forEach(sheetName => {
+    if (skipSheets.includes(sheetName.trim().toUpperCase())) return;
+    const mesLabel = parseSheetName(sheetName);
+    if (!mesLabel) return;
+
+    const ws = wb.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+    if (!rows.length) return;
+
+    let headerIdx = -1;
+    let colMap = {};
+    for (let i = 0; i < Math.min(rows.length, 6); i++) {
+      const row = rows[i].map(c => (c === null ? '' : String(c).trim().toUpperCase()));
+      if (row.some(c => c.includes('GRUPO')) && row.some(c => c.includes('DATA') && c.includes('ENVIO'))) {
+        headerIdx = i;
+        row.forEach((c, idx) => {
+          if (c.includes('GRUPO')) colMap.grupo = idx;
+          else if (c.includes('CRITICID')) colMap.crit = idx;
+          else if (c.includes('DESCRI')) colMap.desc = idx;
+          else if (c.includes('ÁREA') || c.includes('AREA')) colMap.area = idx;
+          else if (c.includes('EMPRESA') || c.includes('MARCA')) colMap.empresa = idx;
+          else if (c.includes('DATA') && c.includes('ENVIO')) colMap.envio = idx;
+          else if (c.includes('PRAZO')) colMap.prazo = idx;
+          else if (c.includes('DATA') && c.includes('DEVOLU')) colMap.devol = idx;
+          else if (c.includes('TEMPO')) colMap.tempo = idx;
+          else if (c === 'STATUS') colMap.status = idx;
+        });
+        break;
+      }
+    }
+    if (headerIdx === -1 || colMap.grupo === undefined) return;
+
+    for (let i = headerIdx + 1; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row) continue;
+      const envioRaw = colMap.envio !== undefined ? row[colMap.envio] : null;
+      if (envioRaw === null || envioRaw === undefined || envioRaw === '') continue;
+
+      const grupoRaw = colMap.grupo !== undefined ? row[colMap.grupo] : null;
+      if (!grupoRaw || String(grupoRaw).trim().toUpperCase() === 'GRUPO') continue;
+
+      const crit = normCrit(colMap.crit !== undefined ? row[colMap.crit] : null) || 'NÃO INFORMADA';
+      const desc = colMap.desc !== undefined && row[colMap.desc] ? String(row[colMap.desc]).trim() : '';
+      const area = colMap.area !== undefined && row[colMap.area] ? String(row[colMap.area]).trim() : 'NÃO INFORMADA';
+      const empresa = colMap.empresa !== undefined && row[colMap.empresa] ? String(row[colMap.empresa]).trim() : 'NÃO INFORMADA';
+
+      let statusRaw = colMap.status !== undefined ? row[colMap.status] : null;
+      let status = statusRaw ? String(statusRaw).trim().toUpperCase() : null;
+      if (!['DEVOLVIDO', 'EM TESTE', 'ANÁLISE EM ATRASO', 'ANALISE EM ATRASO'].includes(status)) {
+        status = null;
+      }
+      if (status === 'ANALISE EM ATRASO') status = 'ANÁLISE EM ATRASO';
+
+      const dEnvio = excelSerialToDate(envioRaw);
+      const dDevol = colMap.devol !== undefined ? excelSerialToDate(row[colMap.devol]) : null;
+      const dPrazo = colMap.prazo !== undefined ? excelSerialToDate(row[colMap.prazo]) : null;
+
+      let tempo = colMap.tempo !== undefined && typeof row[colMap.tempo] === 'number' ? row[colMap.tempo] : null;
+      if (tempo === null && dEnvio && dDevol) tempo = daysBetween(dEnvio, dDevol);
+      if (tempo === null) tempo = 0;
+
+      if (!status) {
+        if (dDevol) status = 'DEVOLVIDO';
+        else if (dPrazo && new Date() > dPrazo) status = 'ANÁLISE EM ATRASO';
+        else status = 'EM TESTE';
+      }
+
+      records.push({
+        mes: mesLabel,
+        grupo: normGrupo(grupoRaw),
+        criticidade: crit,
+        descricao: desc,
+        area: area,
+        empresa: empresa,
+        tempo: Number(tempo) || 0,
+        status: status
+      });
+    }
+  });
+  return records;
+}
+
+function monthSortKey(label) {
+  const [mesNome, ano] = label.split('/');
+  const idx = MESES_CANON.indexOf(mesNome.toUpperCase());
+  return parseInt(ano) * 100 + idx;
+}
+
+function onDataLoaded(records, sourceLabel) {
+  RAW_RECORDS = records;
+  MESES_ORDEM = [...new Set(records.map(r => r.mes))].sort((a,b) => monthSortKey(a) - monthSortKey(b));
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('dashboardContent').style.display = 'block';
+  document.getElementById('headerBadge').textContent = `${MESES_ORDEM.length} meses · ${records.length} amostras`;
+  document.getElementById('footerText').textContent = `Análises de Amostras · Fonte: ${sourceLabel} · ${records.length} amostras analisadas · Atualizado em ${new Date().toLocaleString('pt-BR')}`;
+  populateFilters();
+  update();
+}
+
+const SHEET_NAME_CANDIDATES = [
+  'NOVEMBRO', 'DEZEMBRO',
+  'JANEIRO - 2026', 'FEVEREIRO - 2026', 'MARÇO - 2026', 'ABRIL - 2026', 'MAIO - 2026', 'JUNHO - 2026',
+  'JULHO - 2026', 'AGOSTO - 2026', 'SETEMBRO - 2026', 'OUTUBRO - 2026', 'NOVEMBRO - 2026', 'DEZEMBRO - 2026',
+  'JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO'
+];
+
+function extractSpreadsheetId(url) {
+  const m = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  return m ? m[1] : null;
+}
+
+async function fetchSheetCSV(spreadsheetId, sheetName) {
+  const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+  const resp = await fetch(url, { mode: 'cors', cache: 'no-store' });
+  if (!resp.ok) return null;
+  const text = await resp.text();
+  if (!text || text.trim().startsWith('<') || text.includes('Invalid query') || text.includes('#REF!')) return null;
+  return text;
+}
+
+async function loadFromUrl(url) {
+  if (!url) { setStatus('err', 'Cole um link válido'); return; }
+  const spreadsheetId = extractSpreadsheetId(url.trim());
+  if (!spreadsheetId) { setStatus('err', 'Link inválido — cole o link da planilha do Google Sheets'); return; }
+
+  setStatus('loading', 'Buscando abas mensais…');
+  document.getElementById('btnLoadUrl').disabled = true;
+  try {
+    const seen = new Set();
+    let allRecords = [];
+    let sheetsFound = [];
+
+    for (const sheetName of SHEET_NAME_CANDIDATES) {
+      const mesLabel = normMesLabel(sheetName);
+      if (!mesLabel || seen.has(mesLabel)) continue;
+      const csv = await fetchSheetCSV(spreadsheetId, sheetName);
+      if (!csv) continue;
+      const records = parseSheetCSV(csv, mesLabel);
+      if (records.length) {
+        allRecords = allRecords.concat(records);
+        sheetsFound.push(sheetName);
+        seen.add(mesLabel);
+      }
+    }
+
+    if (!allRecords.length) {
+      throw new Error('Nenhuma aba mensal encontrada ou planilha não está pública. Verifique o compartilhamento.');
+    }
+
+    localStorage.setItem('amostras_url', url);
+    setStatus('ok', `${sheetsFound.length} abas carregadas · ${new Date().toLocaleTimeString('pt-BR')}`);
+    onDataLoaded(allRecords, `Google Sheets (${sheetsFound.length} abas)`);
+  } catch (err) {
+    console.error(err);
+    setStatus('err', err.message || 'Falha ao carregar — verifique o link ou use "Carregar arquivo"');
+    document.getElementById('sourceHelp').classList.add('show');
+  } finally {
+    document.getElementById('btnLoadUrl').disabled = false;
+  }
+}
+
+function loadFromFile(file) {
+  setStatus('loading', 'Lendo arquivo…');
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+      const records = parseWorkbook(wb);
+      if (!records.length) throw new Error('Nenhum registro encontrado');
+      setStatus('ok', `Carregado: ${file.name} · ${new Date().toLocaleTimeString('pt-BR')}`);
+      onDataLoaded(records, file.name);
+    } catch (err) {
+      console.error(err);
+      setStatus('err', 'Não foi possível ler este arquivo (.xlsx esperado)');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+document.getElementById('btnLoadUrl').addEventListener('click', () => {
+  loadFromUrl(document.getElementById('sourceUrl').value);
+});
+document.getElementById('btnUploadFile').addEventListener('click', () => {
+  document.getElementById('fileInput').click();
+});
+document.getElementById('fileInput').addEventListener('change', (e) => {
+  if (e.target.files && e.target.files[0]) loadFromFile(e.target.files[0]);
+});
+
 let state = { mes: 'todos', grupo: 'todos', crit: 'todos', status: 'todos', busca: '' };
 let charts = {};
-let clickFilterLabel = null; // human readable label for the active chart-click filter
+let clickFilterLabel = null;
 
 function populateFilters() {
   const selMes = document.getElementById('filtroMes');
+  selMes.innerHTML = '<option value="todos">Todos os meses</option>';
   MESES_ORDEM.forEach(m => { const o = document.createElement('option'); o.textContent = m; selMes.appendChild(o); });
 
   const grupos = [...new Set(RAW_RECORDS.map(r => r.grupo))].sort();
   const selGrupo = document.getElementById('filtroGrupo');
+  selGrupo.innerHTML = '<option value="todos">Todos os grupos</option>';
   grupos.forEach(g => { const o = document.createElement('option'); o.textContent = g; selGrupo.appendChild(o); });
 }
 
@@ -630,6 +1057,7 @@ document.getElementById('activeFilterClear').addEventListener('click', () => {
 });
 
 function update() {
+  if (!RAW_RECORDS.length) return;
   const data = filtered();
   const agg  = aggregate(data);
   renderKPIs(agg);
@@ -661,9 +1089,18 @@ document.getElementById('filtroBusca').addEventListener('input', e => {
 });
 
 Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
-document.documentElement.setAttribute('data-theme', 'dark');
-populateFilters();
-update();
+const savedTheme = localStorage.getItem('amostras_theme') || 'dark';
+document.documentElement.setAttribute('data-theme', savedTheme);
+document.getElementById('btnDark').classList.toggle('active', savedTheme === 'dark');
+document.getElementById('btnLight').classList.toggle('active', savedTheme === 'light');
+
+const savedUrl = localStorage.getItem('amostras_url');
+if (savedUrl) {
+  document.getElementById('sourceUrl').value = savedUrl;
+  loadFromUrl(savedUrl);
+} else {
+  setStatus('', 'Nenhuma fonte carregada');
+}
 </script>
 </body>
 </html>
